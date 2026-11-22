@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>StaffSync — Employee Management System</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  < link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<link rel="stylesheet" href="style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+  <!-- Auth Modal (Login & Forgot Password) -->
+  <div id="auth-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true">
+    <div class="modal-card">
+      <div class="modal-top">
+        <div>
+          <span id="auth-badge" class="role-badge admin-badge">Admin Portal</span>
+          <h2 id="auth-title">Admin Sign In</h2>
+          <p id="auth-subtitle" class="modal-sub">Sign in to manage employees, salaries, and records.</p>
+        </div>
+        <button type="button" id="close-modal-btn" class="close-btn" title="Close">✕</button>
+      </div>
+
+      <!-- Login Form -->
+      <form id="login-form">
+        <div class="demo-hint">
+          Admin Email: <strong>admin@staffsync.in</strong> (created in Supabase Auth)
+        </div>
+
+        <div class="form-group">
+          <label for="login-email">Admin Email</label>
+          <input type="email" id="login-email" placeholder="admin@staffsync.in" required />
+        </div>
+
+        <div class="form-group">
+          <label for="login-password">Password</label>
+          <input type="password" id="login-password" placeholder="Enter password" required />
+        </div>
+
+        <div class="auth-links">
+          <button type="button" id="open-forgot-btn" class="link-btn">Forgot Password?</button>
+        </div>
+
+        <p id="login-error" class="error-text hidden"></p>
+        <button type="submit" class="btn-primary">Sign In as Admin</button>
+      </form>
+
+      <!-- Forgot Password Form (Sends Supabase Reset Email) -->
+      <form id="forgot-form" class="hidden">
+        <div id="forgot-step-1">
+          <div class="form-group">
+            <label for="forgot-email">Registered Admin Email</label>
+            <input type="email" id="forgot-email" placeholder="admin@staffsync.in" required />
+          </div>
+          <p id="forgot-error" class="error-text hidden"></p>
+          <p id="forgot-success" class="success-banner hidden"></p>
+          <button type="submit" id="send-reset-btn" class="btn-primary">Send Reset Link</button>
+        </div>
+
+        <div class="auth-links center-link">
+          <button type="button" id="back-to-login-btn" class="link-btn">← Back to Sign In</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="app-container">
+    <!-- Top Header -->
+    <header class="topbar">
+      <div class="brand">
+        <div class="logo-box">SS</div>
+        <div>
+          <h1>StaffSync</h1>
+          <span>Employee Directory & Payroll Portal</span>
+        </div>
+      </div>
+
+      <div class="header-actions">
+        <span id="current-role-pill" class="role-pill viewer-pill">Viewer Mode (Read-Only)</span>
+        <button id="reset-demo-btn" class="btn-outline admin-only hidden" title="Restore sample data">Reset Demo Data</button>
+        <button id="open-login-btn" class="btn-primary-sm">Admin Login</button>
+        <button id="logout-btn" class="btn-outline hidden">Logout</button>
+      </div>
+    </header>
+
+    <!-- Viewer Notice Banner -->
+    <div id="viewer-banner" class="info-banner">
+      <span><strong>Viewer POV:</strong> You can browse and filter the employee directory. Log in as <strong>Admin</strong> to add, edit, or delete records.</span>
+      <button type="button" id="banner-login-btn" class="link-btn">Sign In →</button>
+    </div>
+
+    <!-- KPI Stats -->
+    <section class="stats-grid">
+      <div class="stat-card primary-stat">
+        <span class="stat-label">Total Workforce</span>
+        <h2 id="stat-total">0</h2>
+        <small>Registered employees</small>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">Active Staff</span>
+        <h2 id="stat-active" class="text-green">0</h2>
+        <small>Currently working</small>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">On Leave</span>
+        <h2 id="stat-leave" class="text-amber">0</h2>
+        <small>Approved time off</small>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">Monthly Payroll</span>
+        <h2 id="stat-payroll">₹0</h2>
+        <small>Total salary payout</small>
+      </div>
+    </section>
+
+    <!-- Main Content -->
+    <div id="workspace-grid" class="workspace-grid viewer-layout">
+      <!-- Left: Add / Edit Employee Form (Admin POV Only) -->
+      <aside id="admin-form-panel" class="panel form-panel admin-only hidden">
+        <div class="panel-header">
+          <h3 id="form-heading">Add New Employee</h3>
+          <button type="button" id="cancel-edit-btn" class="btn-text hidden">Cancel Edit</button>
+        </div>
+
+        <form id="employee-form">
+          <input type="hidden" id="emp-id" />
+
+          <div class="form-group">
+            <label for="emp-name">Full Name</label>
+            <input type="text" id="emp-name" placeholder="e.g., Aarav Sharma" required />
+          </div>
+
+          <div class="form-group">
+            <label for="emp-email">Work Email</label>
+            <input type="email" id="emp-email" placeholder="aarav@company.in" required />
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="emp-dept">Department</label>
+              <select id="emp-dept">
+                <option value="Engineering">Engineering</option>
+                <option value="HR">Human Resources</option>
+                <option value="Sales">Sales & Marketing</option>
+                <option value="Finance">Finance</option>
+                <option value="Design">Product Design</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="emp-role">Job Role</label>
+              <input type="text" id="emp-role" placeholder="e.g., Data Analyst" required />
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="emp-salary">Monthly Salary (₹)</label>
+              <input type="number" id="emp-salary" min="5000" step="500" placeholder="45000" required />
+            </div>
+
+            <div class="form-group">
+              <label for="emp-status">Status</label>
+              <select id="emp-status">
+                <option value="Active">Active</option>
+                <option value="On Leave">On Leave</option>
+              </select>
+            </div>
+          </div>
+
+          <button type="submit" id="submit-btn" class="btn-primary">+ Add Employee</button>
+        </form>
+      </aside>
+
+      <!-- Right: Employee Table Directory -->
+      <main class="panel directory-panel">
+        <div class="directory-toolbar">
+          <div class="search-box">
+            <input type="text" id="search-input" placeholder="Search by name, role, or email..." />
+          </div>
+          <select id="filter-dept">
+            <option value="All">All Departments</option>
+            <option value="Engineering">Engineering</option>
+            <option value="HR">Human Resources</option>
+            <option value="Sales">Sales & Marketing</option>
+            <option value="Finance">Finance</option>
+            <option value="Design">Product Design</option>
+          </select>
+        </div>
+
+        <div class="table-wrapper">
+          <table class="emp-table">
+            <thead>
+              <tr>
+                <th>Employee</th>
+                <th>Department & Role</th>
+                <th>Salary</th>
+                <th>Status</th>
+                <th class="admin-only hidden">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="employee-tbody"></tbody>
+          </table>
+        </div>
+
+        <div id="empty-state" class="empty-state hidden">
+          <p>No matching employees found.</p>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
