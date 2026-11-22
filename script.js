@@ -1,8 +1,3 @@
-// --- Supabase Config ---
-const SUPABASE_URL =https://swbqtenrlakgauvuqpds.supabase.co/rest/v1/;
-const SUPABASE_ANON_KEY = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN3YnF0ZW5ybGFrZ2F1dnVxcGRzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTUzMjIyNjUsImV4cCI6MjExMDg5ODI2NX0.En79hAJqgRYrRdWBnVNv8MGJvhSFGzqlGIaCwlNFSOM;
-const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
 // --- DOM Elements: Employee & Directory ---
 const form = document.getElementById('employee-form');
 const formHeading = document.getElementById('form-heading');
@@ -43,6 +38,7 @@ const adminOnlyEls = document.querySelectorAll('.admin-only');
 
 const authTitle = document.getElementById('auth-title');
 const authSubtitle = document.getElementById('auth-subtitle');
+const demoPassHint = document.getElementById('demo-pass-hint');
 
 const loginForm = document.getElementById('login-form');
 const loginEmailInput = document.getElementById('login-email');
@@ -55,9 +51,13 @@ const forgotForm = document.getElementById('forgot-form');
 const forgotStep1 = document.getElementById('forgot-step-1');
 const forgotStep2 = document.getElementById('forgot-step-2');
 const forgotEmailInput = document.getElementById('forgot-email');
+const verifyEmailBtn = document.getElementById('verify-email-btn');
 const forgotError = document.getElementById('forgot-error');
+const newPasswordInput = document.getElementById('new-password');
+const confirmPasswordInput = document.getElementById('confirm-password');
+const resetError = document.getElementById('reset-error');
 
-// --- State ---
+// --- Initial Data ---
 const defaultEmployees = [
   { id: 101, name: 'Rohan Verma', email: 'rohan.v@staffsync.in', dept: 'Engineering', role: 'Frontend Developer', salary: 55000, status: 'Active' },
   { id: 102, name: 'Priya Nair', email: 'priya.n@staffsync.in', dept: 'HR', role: 'Talent Acquisition Lead', salary: 48000, status: 'Active' },
@@ -65,10 +65,34 @@ const defaultEmployees = [
   { id: 104, name: 'Sneha Kulkarni', email: 'sneha.k@staffsync.in', dept: 'Design', role: 'UI/UX Designer', salary: 50000, status: 'Active' }
 ];
 
-let employees = [];
-let isAdminLoggedIn = false;
+const defaultAdminAccount = {
+  email: 'admin@staffsync.in',
+  password: 'admin123'
+};
+
+let employees = JSON.parse(localStorage.getItem('staffsync_employees')) || defaultEmployees;
+let adminAccount = JSON.parse(localStorage.getItem('staffsync_admin_creds')) || defaultAdminAccount;
+let isAdminLoggedIn = localStorage.getItem('staffsync_admin_session') === 'true';
+
+function saveEmployees() {
+  localStorage.setItem('staffsync_employees', JSON.stringify(employees));
+}
+
+function saveAdminCreds() {
+  localStorage.setItem('staffsync_admin_creds', JSON.stringify(adminAccount));
+}
+
+function setAdminSession(active) {
+  isAdminLoggedIn = active;
+  localStorage.setItem('staffsync_admin_session', active ? 'true' : 'false');
+  if (!active) resetFormMode();
+  applyRolePOV();
+  renderTable();
+}
 
 function applyRolePOV() {
+  demoPassHint.textContent = adminAccount.password;
+
   if (isAdminLoggedIn) {
     currentRolePill.textContent = 'Admin POV (Full Access)';
     currentRolePill.className = 'role-pill admin-pill';
@@ -78,7 +102,6 @@ function applyRolePOV() {
     logoutBtn.classList.remove('hidden');
     adminOnlyEls.forEach(el => el.classList.remove('hidden'));
   } else {
-    resetFormMode();
     currentRolePill.textContent = 'Viewer Mode (Read-Only)';
     currentRolePill.className = 'role-pill viewer-pill';
     viewerBanner.classList.remove('hidden');
@@ -90,24 +113,12 @@ function applyRolePOV() {
   }
 }
 
-async function checkInitialSession() {
-  const { data } = await supabaseClient.auth.getSession();
-  isAdminLoggedIn = Boolean(data.session);
-  applyRolePOV();
-  renderTable();
-}
-
-supabaseClient.auth.onAuthStateChange((_event, session) => {
-  isAdminLoggedIn = Boolean(session);
-  applyRolePOV();
-  renderTable();
-});
-
 // --- Auth Modal Controls ---
 function openModal(mode = 'login') {
   authModal.classList.remove('hidden');
   loginError.classList.add('hidden');
   forgotError.classList.add('hidden');
+  resetError.classList.add('hidden');
 
   if (mode === 'forgot') {
     showForgotView();
@@ -132,13 +143,16 @@ function showLoginView() {
 
 function showForgotView() {
   authTitle.textContent = 'Reset Admin Password';
-  authSubtitle.textContent = 'Enter your registered admin email to get a reset link.';
+  authSubtitle.textContent = 'Verify your registered admin email to set a new password.';
   loginForm.classList.add('hidden');
   forgotForm.classList.remove('hidden');
   forgotStep1.classList.remove('hidden');
   forgotStep2.classList.add('hidden');
   forgotError.classList.add('hidden');
+  resetError.classList.add('hidden');
   forgotEmailInput.value = '';
+  newPasswordInput.value = '';
+  confirmPasswordInput.value = '';
 }
 
 openLoginBtn.addEventListener('click', () => openModal('login'));
@@ -151,65 +165,73 @@ authModal.addEventListener('click', (e) => {
   if (e.target === authModal) closeModal();
 });
 
-// Login via Supabase Auth
-loginForm.addEventListener('submit', async function (e) {
+// Login Handler
+loginForm.addEventListener('submit', function (e) {
   e.preventDefault();
-  loginError.classList.add('hidden');
+  const enteredEmail = loginEmailInput.value.trim().toLowerCase();
+  const enteredPass = loginPasswordInput.value;
 
-  const email = loginEmailInput.value.trim();
-  const password = loginPasswordInput.value;
-
-  const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
-
-  if (error) {
-    loginError.textContent = error.message;
+  if (enteredEmail === adminAccount.email.toLowerCase() && enteredPass === adminAccount.password) {
+    loginError.classList.add('hidden');
+    closeModal();
+    setAdminSession(true);
+  } else {
+    loginError.textContent = 'Invalid admin email or password.';
     loginError.classList.remove('hidden');
-    return;
   }
-
-  closeModal();
 });
 
-// Forgot Password via Supabase Reset Email
-forgotForm.addEventListener('submit', async function (e) {
-  e.preventDefault();
-  forgotError.classList.add('hidden');
-
-  const email = forgotEmailInput.value.trim();
-  const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
-    redirectTo: window.location.href
-  });
-
-  if (error) {
-    forgotError.textContent = error.message;
+// Forgot Password Step 1: Verify Email
+verifyEmailBtn.addEventListener('click', function () {
+  const email = forgotEmailInput.value.trim().toLowerCase();
+  if (!email) {
+    forgotError.textContent = 'Please enter the registered admin email.';
     forgotError.classList.remove('hidden');
     return;
   }
 
-  alert('Password reset email sent. Check your inbox.');
-  showLoginView();
+  if (email === adminAccount.email.toLowerCase()) {
+    forgotError.classList.add('hidden');
+    forgotStep1.classList.add('hidden');
+    forgotStep2.classList.remove('hidden');
+  } else {
+    forgotError.textContent = 'No admin account found with that email.';
+    forgotError.classList.remove('hidden');
+  }
 });
 
-logoutBtn.addEventListener('click', async () => {
-  await supabaseClient.auth.signOut();
-});
+// Forgot Password Step 2: Save New Password
+forgotForm.addEventListener('submit', function (e) {
+  e.preventDefault();
+  const pass1 = newPasswordInput.value;
+  const pass2 = confirmPasswordInput.value;
 
-// --- Database Operations (Supabase PostgreSQL) ---
-async function fetchEmployees() {
-  const { data, error } = await supabaseClient
-    .from('employees')
-    .select('*')
-    .order('id', { ascending: false });
-
-  if (error) {
-    console.error('Error loading employees:', error.message);
+  if (pass1.length < 6) {
+    resetError.textContent = 'Password must be at least 6 characters long.';
+    resetError.classList.remove('hidden');
     return;
   }
 
-  employees = data || [];
-  renderTable();
-}
+  if (pass1 !== pass2) {
+    resetError.textContent = 'Passwords do not match.';
+    resetError.classList.remove('hidden');
+    return;
+  }
 
+  adminAccount.password = pass1;
+  saveAdminCreds();
+  demoPassHint.textContent = adminAccount.password;
+  resetError.classList.add('hidden');
+  alert('Password updated successfully. Please sign in with your new password.');
+  showLoginView();
+  loginEmailInput.value = adminAccount.email;
+});
+
+logoutBtn.addEventListener('click', () => {
+  setAdminSession(false);
+});
+
+// --- Employee & Directory Logic ---
 function getInitials(name) {
   return name
     .split(' ')
@@ -297,7 +319,7 @@ function renderTable() {
   updateStats();
 }
 
-form.addEventListener('submit', async function (e) {
+form.addEventListener('submit', function (e) {
   e.preventDefault();
   if (!isAdminLoggedIn) {
     openModal('login');
@@ -305,6 +327,7 @@ form.addEventListener('submit', async function (e) {
   }
 
   const existingId = empIdInput.value;
+
   const empData = {
     id: existingId ? Number(existingId) : Date.now(),
     name: nameInput.value.trim(),
@@ -316,29 +339,15 @@ form.addEventListener('submit', async function (e) {
   };
 
   if (existingId) {
-    const { error } = await supabaseClient
-      .from('employees')
-      .update(empData)
-      .eq('id', Number(existingId));
-
-    if (error) {
-      alert('Update failed: ' + error.message);
-      return;
-    }
+    employees = employees.map(emp => (emp.id === Number(existingId) ? empData : emp));
     resetFormMode();
   } else {
-    const { error } = await supabaseClient
-      .from('employees')
-      .insert([empData]);
-
-    if (error) {
-      alert('Insert failed: ' + error.message);
-      return;
-    }
-    form.reset();
+    employees.unshift(empData);
   }
 
-  await fetchEmployees();
+  saveEmployees();
+  renderTable();
+  form.reset();
 });
 
 function editEmployee(id) {
@@ -369,44 +378,29 @@ function resetFormMode() {
 
 cancelEditBtn.addEventListener('click', resetFormMode);
 
-async function deleteEmployee(id) {
+function deleteEmployee(id) {
   if (!isAdminLoggedIn) return;
   if (confirm('Remove this employee record?')) {
-    const { error } = await supabaseClient
-      .from('employees')
-      .delete()
-      .eq('id', id);
-
-    if (error) {
-      alert('Delete failed: ' + error.message);
-      return;
-    }
-
+    employees = employees.filter(emp => emp.id !== id);
     if (Number(empIdInput.value) === id) resetFormMode();
-    await fetchEmployees();
+    saveEmployees();
+    renderTable();
   }
 }
 
 searchInput.addEventListener('input', renderTable);
 filterDept.addEventListener('change', renderTable);
 
-resetDemoBtn.addEventListener('click', async () => {
+resetDemoBtn.addEventListener('click', () => {
   if (!isAdminLoggedIn) return;
-  if (confirm('Restore default sample employees in Supabase?')) {
-    const { error } = await supabaseClient
-      .from('employees')
-      .upsert(defaultEmployees);
-
-    if (error) {
-      alert('Reset failed: ' + error.message);
-      return;
-    }
-
+  if (confirm('Restore default sample employees?')) {
+    employees = [...defaultEmployees];
+    saveEmployees();
     resetFormMode();
-    await fetchEmployees();
+    renderTable();
   }
 });
 
 // Initial load
-checkInitialSession();
-fetchEmployees();
+applyRolePOV();
+renderTable();
