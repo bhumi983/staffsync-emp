@@ -7,11 +7,12 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <!-- Auth Modal (Login & Forgot Password) -->
-  <div id="auth-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true">
+  <!-- Auth Modal (Login, Forgot Password & Recovery Update) -->
+  <div id="auth-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="auth-title">
     <div class="modal-card">
       <div class="modal-top">
         <div>
@@ -19,23 +20,19 @@
           <h2 id="auth-title">Admin Sign In</h2>
           <p id="auth-subtitle" class="modal-sub">Sign in to manage employees, salaries, and records.</p>
         </div>
-        <button type="button" id="close-modal-btn" class="close-btn" title="Close">✕</button>
+        <button type="button" id="close-modal-btn" class="close-btn" title="Close" aria-label="Close modal">✕</button>
       </div>
 
       <!-- Login Form -->
       <form id="login-form">
-        <div class="demo-hint">
-          Demo Admin: <strong>admin@staffsync.in</strong> / Password: <strong id="demo-pass-hint">admin123</strong>
-        </div>
-
         <div class="form-group">
           <label for="login-email">Admin Email</label>
-          <input type="email" id="login-email" placeholder="admin@staffsync.in" required />
+          <input type="email" id="login-email" autocomplete="email" placeholder="admin@company.com" required />
         </div>
 
         <div class="form-group">
           <label for="login-password">Password</label>
-          <input type="password" id="login-password" placeholder="Enter password" required />
+          <input type="password" id="login-password" autocomplete="current-password" placeholder="Enter password" required />
         </div>
 
         <div class="auth-links">
@@ -43,37 +40,37 @@
         </div>
 
         <p id="login-error" class="error-text hidden"></p>
-        <button type="submit" class="btn-primary">Sign In as Admin</button>
+        <button type="submit" id="login-submit-btn" class="btn-primary">Sign In as Admin</button>
       </form>
 
-      <!-- Forgot Password Form -->
+      <!-- Forgot Password Form (Sends Reset Email via Supabase) -->
       <form id="forgot-form" class="hidden">
-        <div id="forgot-step-1">
-          <div class="form-group">
-            <label for="forgot-email">Registered Admin Email</label>
-            <input type="email" id="forgot-email" placeholder="admin@staffsync.in" required />
-          </div>
-          <p id="forgot-error" class="error-text hidden"></p>
-          <button type="button" id="verify-email-btn" class="btn-primary">Verify Account</button>
+        <div class="form-group">
+          <label for="forgot-email">Registered Admin Email</label>
+          <input type="email" id="forgot-email" autocomplete="email" placeholder="admin@company.com" required />
         </div>
-
-        <div id="forgot-step-2" class="hidden">
-          <p class="success-banner">Account verified. Set a new password below:</p>
-          <div class="form-group">
-            <label for="new-password">New Password (min. 6 chars)</label>
-            <input type="password" id="new-password" minlength="6" placeholder="Enter new password" required />
-          </div>
-          <div class="form-group">
-            <label for="confirm-password">Confirm New Password</label>
-            <input type="password" id="confirm-password" minlength="6" placeholder="Re-enter new password" required />
-          </div>
-          <p id="reset-error" class="error-text hidden"></p>
-          <button type="submit" class="btn-primary">Update Password</button>
-        </div>
+        <p id="forgot-error" class="error-text hidden"></p>
+        <p id="forgot-success" class="success-banner hidden"></p>
+        <button type="submit" id="send-reset-btn" class="btn-primary">Send Reset Link</button>
 
         <div class="auth-links center-link">
           <button type="button" id="back-to-login-btn" class="link-btn">← Back to Sign In</button>
         </div>
+      </form>
+
+      <!-- Password Recovery Form (Shown when returning from email reset link) -->
+      <form id="recovery-form" class="hidden">
+        <p class="success-banner">Recovery link verified. Set your new password below:</p>
+        <div class="form-group">
+          <label for="new-password">New Password (min. 6 chars)</label>
+          <input type="password" id="new-password" autocomplete="new-password" minlength="6" placeholder="Enter new password" required />
+        </div>
+        <div class="form-group">
+          <label for="confirm-password">Confirm New Password</label>
+          <input type="password" id="confirm-password" autocomplete="new-password" minlength="6" placeholder="Re-enter new password" required />
+        </div>
+        <p id="recovery-error" class="error-text hidden"></p>
+        <button type="submit" id="update-password-btn" class="btn-primary">Update Password</button>
       </form>
     </div>
   </div>
@@ -91,9 +88,9 @@
 
       <div class="header-actions">
         <span id="current-role-pill" class="role-pill viewer-pill">Viewer Mode (Read-Only)</span>
-        <button id="reset-demo-btn" class="btn-outline admin-only hidden" title="Restore sample data">Reset Demo Data</button>
-        <button id="open-login-btn" class="btn-primary-sm">Admin Login</button>
-        <button id="logout-btn" class="btn-outline hidden">Logout</button>
+        <button id="reset-demo-btn" type="button" class="btn-outline admin-only hidden" title="Restore sample data">Reset Sample Data</button>
+        <button id="open-login-btn" type="button" class="btn-primary-sm">Admin Login</button>
+        <button id="logout-btn" type="button" class="btn-outline hidden">Logout</button>
       </div>
     </header>
 
@@ -102,6 +99,9 @@
       <span><strong>Viewer POV:</strong> You can browse and filter the employee directory. Log in as <strong>Admin</strong> to add, edit, or delete records.</span>
       <button type="button" id="banner-login-btn" class="link-btn">Sign In →</button>
     </div>
+
+    <!-- Status / Feedback Toast Banner -->
+    <div id="status-banner" class="status-toast hidden" role="status" aria-live="polite"></div>
 
     <!-- KPI Stats -->
     <section class="stats-grid">
@@ -170,7 +170,7 @@
           <div class="form-row">
             <div class="form-group">
               <label for="emp-salary">Monthly Salary (₹)</label>
-              <input type="number" id="emp-salary" min="5000" step="500" placeholder="45000" required />
+              <input type="number" id="emp-salary" min="0" step="500" placeholder="45000" required />
             </div>
 
             <div class="form-group">
@@ -192,7 +192,7 @@
           <div class="search-box">
             <input type="text" id="search-input" placeholder="Search by name, role, or email..." />
           </div>
-          <select id="filter-dept">
+          <select id="filter-dept" aria-label="Filter by department">
             <option value="All">All Departments</option>
             <option value="Engineering">Engineering</option>
             <option value="HR">Human Resources</option>
@@ -218,14 +218,11 @@
         </div>
 
         <div id="empty-state" class="empty-state hidden">
-          <p>No matching employees found.</p>
+          <p id="empty-state-text">No matching employees found.</p>
         </div>
       </main>
     </div>
   </div>
-
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-
   <script src="script.js"></script>
 </body>
 </html>
